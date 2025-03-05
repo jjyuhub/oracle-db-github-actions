@@ -1,60 +1,62 @@
-name: Oracle DB Connection Workflow
-on: [push]  # Trigger (adjust as needed)
+name: Oracle Database Connection
+
+on:
+  push:
+    branches:
+      - main
 
 jobs:
-  oracle-test:
-    runs-on: ubuntu-22.04  # Stable Ubuntu with libaio1 support&#8203;:contentReference[oaicite:6]{index=6}&#8203;:contentReference[oaicite:7]{index=7}
-    env: 
-      # (Optional) Set TNS_ADMIN if using tnsnames.ora and wallet files
-      TNS_ADMIN: "$HOME/tns_admin"
+  run-oracle-query:
+    runs-on: ubuntu-22.04  # Use a stable Ubuntu version with libaio1 support
+
+    env:
+      ORACLE_USER: ${{ secrets.ORACLE_USER }}
+      ORACLE_PASSWORD: ${{ secrets.ORACLE_PASSWORD }}
+      ORACLE_CONNECTION_STRING: ${{ secrets.ORACLE_CONNECTION_STRING }}
+      ORACLE_HOME: /opt/oracle/instantclient
+      TNS_ADMIN: /opt/oracle/instantclient/network/admin
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install prerequisites (libaio1, alien, wget, unzip)
-        run: |
-          # Use apt-get with retries in case of transient network issues
-          for attempt in 1 2 3; do
-            sudo apt-get update && sudo apt-get install -y libaio1 alien wget unzip && break
-            echo "APT install failed on attempt $attempt. Retrying..." >&2
-            sleep 5
-          done
-
-      - name: Download Oracle Instant Client RPM
-        run: |
-          # Download latest Oracle Instant Client Basic package (21c in this example)&#8203;:contentReference[oaicite:8]{index=8}
-          IC_URL="http://yum.oracle.com/repo/OracleLinux/OL7/oracle/instantclient21/x86_64/getPackage/oracle-instantclient-basic-21.17.0.0.0-1.x86_64.rpm"
-          for attempt in 1 2 3; do
-            wget -O instantclient.rpm "$IC_URL" && break
-            echo "Download failed on attempt $attempt. Retrying..." >&2
-            sleep 5
-          done
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Install Oracle Instant Client
         run: |
-          sudo alien -i --scripts instantclient.rpm  # Convert RPM to .deb and install
-          rm -f instantclient.rpm                    # Clean up the downloaded RPM
-          # Export Oracle library path for cx_Oracle to find Instant Client libs&#8203;:contentReference[oaicite:9]{index=9}
-          echo "LD_LIBRARY_PATH=/usr/lib/oracle/21/client64/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+          sudo apt-get update
+          sudo apt-get install -y libaio1
+          wget https://download.oracle.com/otn_software/linux/instantclient/instantclient-basic-linux.x64-21.17.0.0.0dbru.zip
+          unzip instantclient-basic-linux.x64-21.17.0.0.0dbru.zip
+          sudo mkdir -p /opt/oracle
+          sudo mv instantclient_21_17 /opt/oracle/instantclient
+          echo "/opt/oracle/instantclient" | sudo tee /etc/ld.so.conf.d/oracle-instantclient.conf
+          sudo ldconfig
 
-      - name: Install Python Oracle driver (cx_Oracle)
-        run: pip install cx_Oracle
-
-      - name: Verify Oracle DB connectivity
-        env:
-          ORACLE_USER: ${{ secrets.DB_USER }}
-          ORACLE_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          ORACLE_DSN: ${{ secrets.DB_DSN }}   # e.g. Oracle connect descriptor or TNS name
+      - name: Install Dependencies
         run: |
-          python - << 'PYCODE'
-          import cx_Oracle, os
-          user = os.environ["ORACLE_USER"]
-          pwd = os.environ["ORACLE_PASSWORD"]
-          dsn = os.environ["ORACLE_DSN"]
-          conn = cx_Oracle.connect(user, pwd, dsn)
-          cur = conn.cursor()
-          cur.execute("SELECT SYSDATE FROM dual")
-          result = cur.fetchone()
-          print(f"Database connected, SYSDATE is {result[0]}")
-          conn.close()
-          PYCODE
+          pip install cx_Oracle
+
+      - name: Run SQL script
+        run: |
+          python -c """
+          import cx_Oracle
+          import os
+
+          connection = cx_Oracle.connect(
+            user=os.environ['ORACLE_USER'],
+            password=os.environ['ORACLE_PASSWORD'],
+            dsn=os.environ['ORACLE_CONNECTION_STRING']
+          )
+
+          cursor = connection.cursor()
+          cursor.execute('SELECT sysdate FROM dual')
+          for row in cursor:
+              print(row)
+
+          cursor.close()
+          connection.close()
+          """
