@@ -1,4 +1,4 @@
-name: Oracle Database Connection
+name: Oracle DB Connection Workflow
 
 on:
   push:
@@ -6,57 +6,47 @@ on:
       - main
 
 jobs:
-  run-oracle-query:
-    runs-on: ubuntu-22.04  # Use a stable Ubuntu version with libaio1 support
-
+  oracle-test:
+    runs-on: ubuntu-latest
     env:
-      ORACLE_USER: ${{ secrets.ORACLE_USER }}
-      ORACLE_PASSWORD: ${{ secrets.ORACLE_PASSWORD }}
-      ORACLE_CONNECTION_STRING: ${{ secrets.ORACLE_CONNECTION_STRING }}
-      ORACLE_HOME: /opt/oracle/instantclient
-      TNS_ADMIN: /opt/oracle/instantclient/network/admin
-
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_DSN: uof5tysupso7dccz_high
+      TNS_ADMIN: ${{ github.workspace }}/.github/workflows
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install Oracle Instant Client
+      - name: Install python-oracledb
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libaio1
-          wget https://download.oracle.com/otn_software/linux/instantclient/instantclient-basic-linux.x64-21.17.0.0.0dbru.zip
-          unzip instantclient-basic-linux.x64-21.17.0.0.0dbru.zip
-          sudo mkdir -p /opt/oracle
-          sudo mv instantclient_21_17 /opt/oracle/instantclient
-          echo "/opt/oracle/instantclient" | sudo tee /etc/ld.so.conf.d/oracle-instantclient.conf
-          sudo ldconfig
+          pip install oracledb
 
-      - name: Install Dependencies
+      - name: Verify Oracle DB connectivity
         run: |
-          pip install cx_Oracle
-
-      - name: Run SQL script
-        run: |
-          python -c """
-          import cx_Oracle
+          python - << 'PYCODE'
+          import oracledb
           import os
 
-          connection = cx_Oracle.connect(
-            user=os.environ['ORACLE_USER'],
-            password=os.environ['ORACLE_PASSWORD'],
-            dsn=os.environ['ORACLE_CONNECTION_STRING']
-          )
+          user = os.environ["DB_USER"]
+          password = os.environ["DB_PASSWORD"]
+          dsn = os.environ["DB_DSN"]
 
-          cursor = connection.cursor()
-          cursor.execute('SELECT sysdate FROM dual')
-          for row in cursor:
-              print(row)
-
-          cursor.close()
-          connection.close()
-          """
+          try:
+              connection = oracledb.connect(user=user, password=password, dsn=dsn)
+              cursor = connection.cursor()
+              cursor.execute("SELECT SYSDATE FROM dual")
+              result = cursor.fetchone()
+              print(f"Database connected, SYSDATE is {result[0]}")
+          except oracledb.Error as e:
+              print(f"Error connecting to the database: {e}")
+          finally:
+              if cursor:
+                  cursor.close()
+              if connection:
+                  connection.close()
+          PYCODE
