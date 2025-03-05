@@ -1,0 +1,59 @@
+name: Oracle Database Connection
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  run-oracle-query:
+    runs-on: ubuntu-22.04
+
+    env:
+      ORACLE_USER: ${{ secrets.ORACLE_USER }}
+      ORACLE_PASSWORD: ${{ secrets.ORACLE_PASSWORD }}
+      ORACLE_CONNECTION_STRING: ${{ secrets.ORACLE_CONNECTION_STRING }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Oracle Instant Client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libaio1
+          wget https://download.oracle.com/otn_software/linux/instantclient/instantclient-basic-linux.x64-21.13.0.0.0dbru.zip
+          unzip instantclient-basic-linux.x64-21.13.0.0.0dbru.zip
+          sudo mkdir -p /opt/oracle
+          sudo mv instantclient_21_13 /opt/oracle/instantclient
+          echo "/opt/oracle/instantclient" | sudo tee /etc/ld.so.conf.d/oracle-instantclient.conf
+          sudo ldconfig
+
+      - name: Install Dependencies
+        run: |
+          pip install oracledb
+
+      - name: Run SQL script
+        run: |
+          python -c """
+          import oracledb
+
+          connection = oracledb.connect(
+            user='${{ env.ORACLE_USER }}',
+            password='${{ env.ORACLE_PASSWORD }}',
+            dsn='${{ env.ORACLE_CONNECTION_STRING }}'
+          )
+
+          cursor = connection.cursor()
+          cursor.execute('SELECT sysdate FROM dual')
+          for row in cursor:
+              print(row)
+
+          cursor.close()
+          connection.close()
+          """
