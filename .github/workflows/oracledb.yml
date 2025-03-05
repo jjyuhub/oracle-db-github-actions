@@ -25,4 +25,27 @@ jobs:
         run: |
           pip install oracledb
 
-      - name: Verify Oracle
+      - name: Verify Oracle DB connectivity
+        run: |
+          python - << 'PYCODE'
+          import oracledb
+          import os
+
+          user = os.environ["DB_USER"]
+          password = os.environ["DB_PASSWORD"]
+          dsn = os.environ["DB_DSN"]
+
+          try:
+              connection = oracledb.connect(user=user, password=password, dsn=dsn)
+              cursor = connection.cursor()
+              cursor.execute("SELECT SYSDATE FROM dual")
+              result = cursor.fetchone()
+              print(f"Database connected, SYSDATE is {result[0]}")
+          except oracledb.Error as e:
+              print(f"Error connecting to the database: {e}")
+          finally:
+              if cursor:
+                  cursor.close()
+              if connection:
+                  connection.close()
+          PYCODE
