@@ -14,7 +14,7 @@ conn = oracledb.connect(
 
 cur = conn.cursor()
 
-# Test connection
+# Check DB connectivity
 cur.execute("SELECT SYSDATE FROM dual")
 sysdate = cur.fetchone()[0]
 print(f"✅ Connected successfully! SYSDATE: {sysdate}")
@@ -54,7 +54,7 @@ print("✅ Data updated successfully.")
 cur.execute("SELECT description FROM test_table WHERE id = :1", [row[0]])
 updated_row = cur.fetchone()
 assert updated_row[0] == 'Updated description', "Data update verification failed!"
-print(f"✅ Update verified: {updated description}")
+print(f"✅ Update verified: {updated_row[0]}")
 
 # Delete data
 cur.execute("DELETE FROM test_table WHERE id = :1", [row[0]])
