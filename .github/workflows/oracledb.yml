@@ -1,4 +1,4 @@
-name: Oracle DB Connection Workflow
+name: Oracle Autonomous DB (with wallet)
 
 on:
   push:
@@ -6,46 +6,59 @@ on:
       - main
 
 jobs:
-  oracle-test:
+  oracle-db-test:
     runs-on: ubuntu-latest
+
     env:
       DB_USER: ${{ secrets.DB_USER }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       DB_DSN: ${{ secrets.DB_DSN }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      WALLET_PASSWORD: ${{ secrets.WALLET_PASSWORD }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install python-oracledb
-        run: |
-          pip install oracledb
+      - name: Install Oracle DB driver
+        run: pip install oracledb
 
-      - name: Verify Oracle DB connectivity
+      - name: Decode & Extract Wallet
         run: |
-          python - << 'PYCODE'
+          echo "${{ secrets.WALLET_ZIP }}" | base64 --decode > wallet.zip
+          unzip wallet.zip -d oracle_wallet
+
+      - name: Test Oracle DB Connection
+        run: |
+          python - <<EOF
           import oracledb
           import os
 
-          user = os.environ["DB_USER"]
-          password = os.environ["DB_PASSWORD"]
-          dsn = os.environ["DB_DSN"]
+          wallet_dir = os.path.abspath("oracle_wallet")
+          os.environ["TNS_ADMIN"] = wallet_dir
 
-          try:
-              connection = oracledb.connect(user=user, password=password, dsn=dsn)
-              cursor = connection.cursor()
+          conn = oracledb.connect(
+              user="${{ secrets.DB_USER }}",
+              password="${{ secrets.DB_PASSWORD }}",
+              dsn="${{ secrets.DB_DSN }}",
+              wallet_password="${{ secrets.WALLET_PASSWORD }}",
+              config_dir=wallet_dir,
+              wallet_location=wallet_dir,
+              ssl_server_dn_match=True
+          )
+
+          with conn.cursor() as cursor:
               cursor.execute("SELECT SYSDATE FROM dual")
               result = cursor.fetchone()
-              print(f"Database connected, SYSDATE is {result[0]}")
-          except oracledb.Error as e:
-              print(f"Error connecting to the database: {e}")
-          finally:
-              if cursor:
-                  cursor.close()
-              if connection:
-                  connection.close()
-          PYCODE
+              print(f"✅ Connected successfully! SYSDATE: {result[0]}")
+
+          conn.close()
+          EOF
+
+      - name: Decode and Extract Wallet (with password)
+        run: |
+          echo "${{ secrets.WALLET_ZIP }}" | base64 --decode > wallet.zip
+          unzip wallet.zip -d oracle_wallet
