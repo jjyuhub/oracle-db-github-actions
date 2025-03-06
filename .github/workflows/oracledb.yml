@@ -1,4 +1,4 @@
-name: Oracle Autonomous DB (with wallet)
+name: Oracle Autonomous DB Workflow
 
 on:
   push:
@@ -16,15 +16,17 @@ jobs:
       WALLET_PASSWORD: ${{ secrets.WALLET_PASSWORD }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Oracle DB driver
-        run: pip install oracledb
+      - name: Install oracledb
+        run: |
+          pip install oracledb
 
       - name: Decode & Extract Wallet
         run: |
@@ -33,32 +35,26 @@ jobs:
 
       - name: Test Oracle DB Connection
         run: |
-          python - <<EOF
+          python - <<'EOF'
           import oracledb
           import os
 
           wallet_dir = os.path.abspath("oracle_wallet")
-          os.environ["TNS_ADMIN"] = wallet_dir
 
-          conn = oracledb.connect(
-              user="${{ secrets.DB_USER }}",
-              password="${{ secrets.DB_PASSWORD }}",
-              dsn="${{ secrets.DB_DSN }}",
-              wallet_password="${{ secrets.WALLET_PASSWORD }}",
-              config_dir=wallet_dir,
+          connection = oracledb.connect(
+              user=os.getenv("DB_USER"),
+              password=os.getenv("DB_PASSWORD"),
+              dsn=os.getenv("DB_DSN"),
+              wallet_password=os.getenv("WALLET_PASSWORD"),
               wallet_location=wallet_dir,
-              ssl_server_dn_match=True
+              config_dir=wallet_dir
           )
 
-          with conn.cursor() as cursor:
-              cursor.execute("SELECT SYSDATE FROM dual")
-              result = cursor.fetchone()
-              print(f"✅ Connected successfully! SYSDATE: {result[0]}")
+          cursor = connection.cursor()
+          cursor.execute("SELECT SYSDATE FROM dual")
+          result = cursor.fetchone()
+          print(f"✅ Connected successfully! SYSDATE: {result[0]}")
 
-          conn.close()
+          cursor.close()
+          connection.close()
           EOF
-
-      - name: Decode and Extract Wallet (with password)
-        run: |
-          echo "${{ secrets.WALLET_ZIP }}" | base64 --decode > wallet.zip
-          unzip wallet.zip -d oracle_wallet
